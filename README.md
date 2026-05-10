@@ -366,7 +366,9 @@ docker images | grep -i diann
 Test DIA-NN inside Docker:
 
 ```bash
-docker run --rm diann:latest --help | head -n 30
+docker run --rm --entrypoint /bin/bash diann:latest -lc 'find / -type f -name "diann-linux" 2>/dev/null'
+
+docker run --rm --entrypoint /diann-2.0/diann-linux diann:latest --help | head -n 30
 ```
 
 Return to the repository root:
