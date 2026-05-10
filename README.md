@@ -12,7 +12,8 @@ The workflow covers:
 2. downloading reviewed UniProt Swiss-Prot FASTA files;
 3. creating a combined human + *E. coli* FASTA database;
 4. installing Docker in WSL/Linux;
-5. preparing the environment for DIA-NN analysis.
+5. building a DIA-NN Docker image;
+6. preparing the environment for DIA-NN analysis.
 
 ---
 
@@ -31,7 +32,61 @@ Install basic command-line tools:
 
 ```bash
 sudo apt update
-sudo apt install -y wget curl git gzip ca-certificates gnupg lsb-release
+sudo apt install -y wget curl git gzip unzip ca-certificates gnupg lsb-release
+```
+
+---
+
+# 0. Create the project folder
+
+All data, FASTA files, Docker files, and DIA-NN results should be stored inside one project folder.
+
+For this tutorial, use:
+
+```bash
+~/projects/diann_tutorial
+```
+
+Create the project folder:
+
+```bash
+mkdir -p ~/projects/diann_tutorial
+cd ~/projects/diann_tutorial
+```
+
+From now on, all commands should be run from this project folder unless stated otherwise.
+
+Check your current location:
+
+```bash
+pwd
+```
+
+Expected output should be similar to:
+
+```text
+/home/your_username/projects/diann_tutorial
+```
+
+Create the main folder structure:
+
+```bash
+mkdir -p data_prot/PXD062423
+mkdir -p fasta
+mkdir -p results/diann/libraries
+mkdir -p tools/diann_docker
+```
+
+The project folder should now contain:
+
+```bash
+ls
+```
+
+Expected output:
+
+```text
+data_prot  fasta  results  tools
 ```
 
 ---
@@ -42,11 +97,10 @@ The training dataset is downloaded from PRIDE project **PXD062423**.
 
 This dataset contains Thermo `.raw` DIA files from a tear-fluid proteomics study, together with DIA-NN output tables.
 
-Create a folder for the dataset:
+Go to the dataset folder:
 
 ```bash
-mkdir -p data_prot/PXD062423
-cd data_prot/PXD062423
+cd ~/projects/diann_tutorial/data_prot/PXD062423
 ```
 
 Define the PRIDE download link:
@@ -92,10 +146,10 @@ Check the downloaded files:
 ls -lh
 ```
 
-Return to the repository root:
+Return to the project root:
 
 ```bash
-cd ../..
+cd ~/projects/diann_tutorial
 ```
 
 ---
@@ -112,11 +166,10 @@ For this tutorial, we use reviewed UniProt Swiss-Prot FASTA files:
 
 Reviewed Swiss-Prot entries are preferred here because they are smaller, cleaner, and more suitable for a teaching workflow than the full UniProt database.
 
-Create a FASTA folder:
+Go to the FASTA folder:
 
 ```bash
-mkdir -p fasta
-cd fasta
+cd ~/projects/diann_tutorial/fasta
 ```
 
 Download reviewed human Swiss-Prot FASTA:
@@ -167,10 +220,10 @@ Expected values are approximately:
 
 The exact numbers can differ slightly because UniProt is updated over time.
 
-Return to the repository root:
+Return to the project root:
 
 ```bash
-cd ..
+cd ~/projects/diann_tutorial
 ```
 
 ---
@@ -201,17 +254,13 @@ sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
 ```
 
 Install Docker Engine:
-(make sure you are in the folder "diann_linux"!)
+
 ```bash
 sudo apt update
 
 sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 ```
 
-If you have problem with WSL (Bash is trying to run /bin/bash\r, which does not exist), try this:
-```bash
-sed -i 's/\r$//' make-docker.sh
-```
 Start Docker:
 
 ```bash
@@ -251,12 +300,124 @@ docker run hello-world
 
 ---
 
-#  Expected folder structure
+# 4. Build a DIA-NN Docker image
 
-After downloading the dataset and FASTA files, the repository should look like this:
+DIA-NN provides a Linux package that includes a Docker build script. This is the cleanest way to run DIA-NN in WSL/Linux because the container includes the required dependencies instead of relying on the host system.
+
+Go to the DIA-NN Docker build folder:
+
+```bash
+cd ~/projects/diann_tutorial/tools/diann_docker
+```
+
+Download the public DIA-NN Academia Linux package from the official DIA-NN GitHub release:
+
+```bash
+DIANN_URL=$(curl -sL https://api.github.com/repos/vdemichev/DiaNN/releases/tags/2.0 | \
+grep browser_download_url | \
+grep -Ei "Linux.*zip" | \
+head -n 1 | \
+cut -d '"' -f 4)
+
+echo "$DIANN_URL"
+
+curl -L -o diann_linux.zip "$DIANN_URL"
+```
+
+Unzip the DIA-NN package:
+
+```bash
+unzip -q diann_linux.zip -d diann_linux
+```
+
+Check the unpacked files:
+
+```bash
+ls -lh diann_linux
+```
+
+You should see files similar to:
 
 ```text
-.
+Dockerfile
+make-docker.sh
+diann-2.0
+```
+
+Go to the unpacked DIA-NN folder:
+
+```bash
+cd diann_linux
+```
+
+If the script has Windows line endings, fix them:
+
+```bash
+sed -i 's/\r$//' make-docker.sh
+```
+
+Build the DIA-NN Docker image:
+
+```bash
+chmod +x make-docker.sh
+./make-docker.sh
+```
+
+Check that the image exists:
+
+```bash
+docker images | grep -i diann
+```
+
+Tag the built image as `diann:latest`:
+
+```bash
+docker tag diann_docker:latest diann:latest
+```
+
+Find the DIA-NN binary inside the image:
+
+```bash
+docker run --rm --entrypoint /bin/bash diann:latest -lc 'find / -type f -name "diann-linux" 2>/dev/null'
+```
+
+Create a wrapper image called `diann-run:latest`.
+
+This wrapper lets us run DIA-NN directly without manually specifying the binary path every time:
+
+```bash
+DIANN_BIN=$(docker run --rm --entrypoint /bin/bash diann:latest -lc 'find / -type f -name "diann-linux" 2>/dev/null | head -n 1')
+
+echo "$DIANN_BIN"
+
+cat > Dockerfile.diann-run <<EOF
+FROM diann:latest
+ENTRYPOINT ["$DIANN_BIN"]
+EOF
+
+docker build -f Dockerfile.diann-run -t diann-run:latest .
+```
+
+Test the DIA-NN wrapper image:
+
+```bash
+docker run --rm diann-run:latest --help | head -n 30
+```
+
+Return to the project root:
+
+```bash
+cd ~/projects/diann_tutorial
+```
+
+---
+
+# 5. Expected folder structure
+
+After downloading the dataset, FASTA files, and DIA-NN Docker files, the project folder should look like this:
+
+```text
+~/projects/diann_tutorial
 ├── data_prot
 │   └── PXD062423
 │       ├── DIA_Base_1.raw
@@ -285,96 +446,31 @@ After downloading the dataset and FASTA files, the repository should look like t
 │   ├── human_swissprot_reviewed.fasta
 │   ├── ecoli_swissprot_reviewed.fasta
 │   └── human_ecoli_swissprot_reviewed.fasta
-└── README.md
+├── results
+│   └── diann
+│       └── libraries
+└── tools
+    └── diann_docker
+        ├── diann_linux.zip
+        └── diann_linux
 ```
 
 ---
+
 # Notes
 
 The `.raw` files are Thermo raw mass spectrometry files.
 
 For DIA-NN analysis inside Docker, make sure the DIA-NN version supports Thermo `.raw` files on Linux. If not, convert the `.raw` files to `.mzML` before DIA-NN processing.
 
-For this tutorial, the recommended FASTA file is:
+For this tutorial, the recommended FASTA file for all mixed human + *E. coli* dilution samples is:
 
 ```text
 fasta/human_ecoli_swissprot_reviewed.fasta
 ```
-# 4. Build a DIA-NN Docker image
 
-DIA-NN provides a Linux package that includes a `make_docker.sh` script for building a Docker container. This is the cleanest way to run DIA-NN in WSL/Linux because the container includes the required dependencies instead of relying on the host system. The standard DIA-NN workflow is: first generate a predicted spectral library from FASTA, then analyze the raw files with that library. :contentReference[oaicite:0]{index=0}
+For pooled human tear-fluid samples only, the human-only FASTA is also appropriate:
 
-Create a folder for the DIA-NN Docker build:
-
-```bash
-mkdir -p tools/diann_docker
-cd tools/diann_docker
+```text
+fasta/human_swissprot_reviewed.fasta
 ```
-
-Download the latest public DIA-NN Academia Linux package from the official DIA-NN GitHub release:
-
-```bash
-DIANN_URL=$(curl -sL https://api.github.com/repos/vdemichev/DiaNN/releases/tags/2.0 | \
-grep browser_download_url | \
-grep -Ei "Linux.*zip" | \
-head -n 1 | \
-cut -d '"' -f 4)
-
-echo "$DIANN_URL"
-
-curl -L -o diann_linux.zip "$DIANN_URL"
-```
-
-Unzip the DIA-NN package:
-
-```bash
-unzip -q diann_linux.zip -d diann_linux
-```
-
-Find the Docker build script:
-
-```bash
-find diann_linux -name "make_docker.sh"
-```
-
-Enter the folder containing `make_docker.sh`:
-
-```bash
-cd $(find diann_linux -name "make_docker.sh" -exec dirname {} \; | head -n 1)
-```
-
-Build the DIA-NN Docker image:
-
-```bash
-chmod +x make_docker.sh
-./make_docker.sh
-```
-
-Tag the newest image as `diann:latest` so that the commands below work consistently:
-
-```bash
-BUILT_IMAGE_ID=$(docker images -q | head -n 1)
-docker tag "$BUILT_IMAGE_ID" diann:latest
-```
-
-Check that the image exists:
-
-```bash
-docker images | grep -i diann
-```
-
-Test DIA-NN inside Docker:
-
-```bash
-docker run --rm --entrypoint /bin/bash diann:latest -lc 'find / -type f -name "diann-linux" 2>/dev/null'
-
-docker run --rm --entrypoint /diann-2.0/diann-linux diann:latest --help | head -n 30
-```
-
-Return to the repository root:
-
-```bash
-cd ../../../..
-```
-
----
