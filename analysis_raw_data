@@ -1,0 +1,269 @@
+## Run DIA-NN analysis using the generated spectral libraries
+
+Create the DIA-NN analysis script:
+
+```bash
+cat > run_diann_publication_analysis.sh <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "======================================================"
+echo " DIA-NN publication-style analysis"
+echo " Dataset: PXD062423"
+echo "======================================================"
+
+# ------------------------------------------------------
+# User settings
+# ------------------------------------------------------
+
+DIANN_IMAGE="diann:latest"
+THREADS="${THREADS:-8}"
+
+RAW_DIR="data_prot/PXD062423"
+
+LIB_DIR="results/diann/libraries"
+HUMAN_LIB="${LIB_DIR}/human_swissprot.predicted.speclib"
+HUMAN_ECOLI_LIB="${LIB_DIR}/human_ecoli_swissprot.predicted.speclib"
+
+FASTA_DIR="fasta"
+HUMAN_FASTA="${FASTA_DIR}/human_swissprot_reviewed.fasta"
+HUMAN_ECOLI_FASTA="${FASTA_DIR}/human_ecoli_swissprot_reviewed.fasta"
+
+OUT_DIR="results/diann/publication_style"
+
+POOLED_OUT_DIR="${OUT_DIR}/pooled_tear_human"
+DILUTION_OUT_DIR="${OUT_DIR}/dilution_human_ecoli"
+
+mkdir -p "$POOLED_OUT_DIR"
+mkdir -p "$DILUTION_OUT_DIR"
+
+# ------------------------------------------------------
+# Check Docker image
+# ------------------------------------------------------
+
+echo ""
+echo "Checking DIA-NN Docker image..."
+
+if ! docker image inspect "$DIANN_IMAGE" > /dev/null 2>&1; then
+  echo "ERROR: Docker image not found: $DIANN_IMAGE"
+  echo "Build the DIA-NN Docker image first."
+  exit 1
+fi
+
+echo "Docker image found: $DIANN_IMAGE"
+
+# ------------------------------------------------------
+# Check required files
+# ------------------------------------------------------
+
+echo ""
+echo "Checking spectral libraries and FASTA files..."
+
+for FILE in \
+  "$HUMAN_LIB" \
+  "$HUMAN_ECOLI_LIB" \
+  "$HUMAN_FASTA" \
+  "$HUMAN_ECOLI_FASTA"
+do
+  if [ ! -f "$FILE" ]; then
+    echo "ERROR: Required file not found:"
+    echo "$FILE"
+    exit 1
+  fi
+done
+
+echo "Spectral libraries and FASTA files found."
+
+echo ""
+echo "Checking raw files..."
+
+POOLED_FILES=(
+  "Pool_DIA_R1.raw"
+  "Pool_DIA_R2.raw"
+  "Pool_DIA_R3.raw"
+  "Pool_DIA_R4.raw"
+  "Pool_DIA_R5.raw"
+  "Pool_DIA_R6.raw"
+  "Pool_DIA_R7.raw"
+  "Pool_DIA_R8.raw"
+)
+
+DILUTION_FILES=(
+  "DIA_Base_1.raw"
+  "DIA_Base_2.raw"
+  "DIA_Base_3.raw"
+  "DIA_2X_1.raw"
+  "DIA_2X_2.raw"
+  "DIA_2X_3.raw"
+  "DIA_4X_1.raw"
+  "DIA_4X_2.raw"
+  "DIA_4X_3.raw"
+  "DIA_8X_1.raw"
+  "DIA_8X_2.raw"
+  "DIA_8X_3.raw"
+)
+
+for FILE in "${POOLED_FILES[@]}" "${DILUTION_FILES[@]}"
+do
+  if [ ! -f "${RAW_DIR}/${FILE}" ]; then
+    echo "ERROR: Raw file not found:"
+    echo "${RAW_DIR}/${FILE}"
+    exit 1
+  fi
+done
+
+echo "Raw files found."
+
+# ------------------------------------------------------
+# Shared DIA-NN settings
+# ------------------------------------------------------
+#
+# These settings follow the methods section:
+# - Trypsin/P digestion
+# - 1 missed cleavage
+# - N-terminal methionine excision
+# - carbamidomethylation of cysteine as fixed modification
+# - oxidation of methionine as variable modification
+# - gene-level protein inference
+# - MBR enabled
+# - matrix output enabled
+#
+# DIA-NN 2.x uses QuantUMS precision by default.
+# The paper used Quant UMS high precision in DIA-NN v1.9.
+#
+
+COMMON_DIANN_ARGS=(
+  --threads "$THREADS"
+  --qvalue 0.01
+  --matrices
+  --pg-level 2
+  --reanalyse
+  --cut "K*,R*,!*P"
+  --missed-cleavages 1
+  --met-excision
+  --fixed-mod Carbamidomethyl,57.021464,C
+  --var-mod Oxidation,15.994915,M
+  --var-mods 1
+)
+
+# ------------------------------------------------------
+# 1. Pooled tear-fluid DIA analysis
+# ------------------------------------------------------
+
+echo ""
+echo "======================================================"
+echo " 1/2 Running pooled tear-fluid DIA analysis"
+echo "======================================================"
+echo ""
+echo "Input files:"
+printf '  %s\n' "${POOLED_FILES[@]}"
+echo ""
+echo "Library:"
+echo "  $HUMAN_LIB"
+echo ""
+echo "FASTA:"
+echo "  $HUMAN_FASTA"
+echo ""
+
+POOLED_DOCKER_FILES=()
+for FILE in "${POOLED_FILES[@]}"
+do
+  POOLED_DOCKER_FILES+=(--f "/data/${RAW_DIR}/${FILE}")
+done
+
+docker run --rm \
+  -v "$PWD:/data" \
+  "$DIANN_IMAGE" \
+  "${POOLED_DOCKER_FILES[@]}" \
+  --lib "/data/${HUMAN_LIB}" \
+  --fasta "/data/${HUMAN_FASTA}" \
+  --out "/data/${POOLED_OUT_DIR}/pooled_tear_human_report.tsv" \
+  "${COMMON_DIANN_ARGS[@]}" \
+  2>&1 | tee "${POOLED_OUT_DIR}/pooled_tear_human_console.log"
+
+echo ""
+echo "Pooled tear-fluid DIA analysis finished."
+echo "Output folder:"
+echo "  $POOLED_OUT_DIR"
+
+# ------------------------------------------------------
+# 2. Dilution / spike-in DIA analysis
+# ------------------------------------------------------
+
+echo ""
+echo "======================================================"
+echo " 2/2 Running dilution / spike-in DIA analysis"
+echo "======================================================"
+echo ""
+echo "Input files:"
+printf '  %s\n' "${DILUTION_FILES[@]}"
+echo ""
+echo "Library:"
+echo "  $HUMAN_ECOLI_LIB"
+echo ""
+echo "FASTA:"
+echo "  $HUMAN_ECOLI_FASTA"
+echo ""
+
+DILUTION_DOCKER_FILES=()
+for FILE in "${DILUTION_FILES[@]}"
+do
+  DILUTION_DOCKER_FILES+=(--f "/data/${RAW_DIR}/${FILE}")
+done
+
+docker run --rm \
+  -v "$PWD:/data" \
+  "$DIANN_IMAGE" \
+  "${DILUTION_DOCKER_FILES[@]}" \
+  --lib "/data/${HUMAN_ECOLI_LIB}" \
+  --fasta "/data/${HUMAN_ECOLI_FASTA}" \
+  --out "/data/${DILUTION_OUT_DIR}/dilution_human_ecoli_report.tsv" \
+  "${COMMON_DIANN_ARGS[@]}" \
+  2>&1 | tee "${DILUTION_OUT_DIR}/dilution_human_ecoli_console.log"
+
+echo ""
+echo "Dilution / spike-in DIA analysis finished."
+echo "Output folder:"
+echo "  $DILUTION_OUT_DIR"
+
+# ------------------------------------------------------
+# Summary
+# ------------------------------------------------------
+
+echo ""
+echo "======================================================"
+echo " DIA-NN analysis finished"
+echo "======================================================"
+echo ""
+echo "Main output folders:"
+echo ""
+echo "1. Pooled tear-fluid analysis:"
+echo "   $POOLED_OUT_DIR"
+echo ""
+echo "2. Dilution / spike-in analysis:"
+echo "   $DILUTION_OUT_DIR"
+echo ""
+echo "Generated files:"
+find "$OUT_DIR" -maxdepth 3 -type f | sort
+echo ""
+EOF
+```
+
+Make it executable:
+
+```bash
+chmod +x run_diann_publication_analysis.sh
+```
+
+Run it:
+
+```bash
+./run_diann_publication_analysis.sh
+```
+
+Check the outputs:
+
+```bash
+ls -lh results/diann/publication_style/pooled_tear_human
+ls -lh results/diann/publication_style/dilution_human_ecoli
+```
