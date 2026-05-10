@@ -208,6 +208,10 @@ sudo apt update
 sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 ```
 
+If you have problem with WSL (Bash is trying to run /bin/bash\r, which does not exist), try this:
+```bash
+sed -i 's/\r$//' make-docker.sh
+```
 Start Docker:
 
 ```bash
