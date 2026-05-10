@@ -201,7 +201,7 @@ sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
 ```
 
 Install Docker Engine:
-
+(make sure you are in the folder "diann_linux"!)
 ```bash
 sudo apt update
 
