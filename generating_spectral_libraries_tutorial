@@ -1,0 +1,188 @@
+## Generate DIA-NN predicted spectral libraries from FASTA
+
+Before running DIA-NN on the raw files, we generate predicted spectral libraries from the FASTA databases.
+
+This tutorial creates two libraries:
+
+| Library | FASTA input | Use case |
+|---|---|---|
+| Human-only library | `human_swissprot_reviewed.fasta` | Pooled tear-fluid DIA files |
+| Human + *E. coli* library | `human_ecoli_swissprot_reviewed.fasta` | Dilution samples containing human tear peptides mixed with *E. coli* digest |
+
+The generated libraries will be saved in:
+
+```text
+results/diann/libraries/
+```
+
+This step assumes that the DIA-NN Docker image is already available as:
+
+```text
+diann:latest
+```
+
+Create the library-generation script:
+
+```bash
+cat > generate_diann_libraries.sh <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "======================================================"
+echo " Generating DIA-NN predicted spectral libraries"
+echo "======================================================"
+
+# Docker image
+DIANN_IMAGE="diann:latest"
+
+# FASTA input files
+HUMAN_FASTA="fasta/human_swissprot_reviewed.fasta"
+HUMAN_ECOLI_FASTA="fasta/human_ecoli_swissprot_reviewed.fasta"
+
+# Output folder
+OUT_DIR="results/diann/libraries"
+
+# Output spectral libraries
+HUMAN_LIB="${OUT_DIR}/human_swissprot.predicted.speclib"
+HUMAN_ECOLI_LIB="${OUT_DIR}/human_ecoli_swissprot.predicted.speclib"
+
+# Number of threads
+THREADS="${THREADS:-8}"
+
+echo ""
+echo "Checking Docker image..."
+
+if ! docker image inspect "$DIANN_IMAGE" > /dev/null 2>&1; then
+  echo "ERROR: Docker image not found: $DIANN_IMAGE"
+  echo "Build or pull the DIA-NN Docker image first."
+  exit 1
+fi
+
+echo "Docker image found: $DIANN_IMAGE"
+
+echo ""
+echo "Checking FASTA files..."
+
+if [ ! -f "$HUMAN_FASTA" ]; then
+  echo "ERROR: Human FASTA file not found:"
+  echo "$HUMAN_FASTA"
+  exit 1
+fi
+
+if [ ! -f "$HUMAN_ECOLI_FASTA" ]; then
+  echo "ERROR: Combined human + E. coli FASTA file not found:"
+  echo "$HUMAN_ECOLI_FASTA"
+  exit 1
+fi
+
+echo "FASTA files found."
+
+echo ""
+echo "Creating output folder..."
+mkdir -p "$OUT_DIR"
+
+echo ""
+echo "======================================================"
+echo " 1/2 Generating human-only predicted spectral library"
+echo "======================================================"
+echo ""
+echo "Input FASTA:"
+echo "  $HUMAN_FASTA"
+echo ""
+echo "Output library:"
+echo "  $HUMAN_LIB"
+echo ""
+
+docker run --rm \
+  -v "$PWD:/data" \
+  "$DIANN_IMAGE" \
+  --fasta "/data/${HUMAN_FASTA}" \
+  --fasta-search \
+  --gen-spec-lib \
+  --predictor \
+  --cut "K*,R*,!*P" \
+  --missed-cleavages 1 \
+  --min-pep-len 7 \
+  --max-pep-len 30 \
+  --min-pr-charge 2 \
+  --max-pr-charge 4 \
+  --met-excision \
+  --fixed-mod Carbamidomethyl,57.021464,C \
+  --var-mod Oxidation,15.994915,M \
+  --var-mods 1 \
+  --out-lib "/data/${HUMAN_LIB}" \
+  --threads "$THREADS"
+
+echo ""
+echo "======================================================"
+echo " 2/2 Generating human + E. coli predicted spectral library"
+echo "======================================================"
+echo ""
+echo "Input FASTA:"
+echo "  $HUMAN_ECOLI_FASTA"
+echo ""
+echo "Output library:"
+echo "  $HUMAN_ECOLI_LIB"
+echo ""
+
+docker run --rm \
+  -v "$PWD:/data" \
+  "$DIANN_IMAGE" \
+  --fasta "/data/${HUMAN_ECOLI_FASTA}" \
+  --fasta-search \
+  --gen-spec-lib \
+  --predictor \
+  --cut "K*,R*,!*P" \
+  --missed-cleavages 1 \
+  --min-pep-len 7 \
+  --max-pep-len 30 \
+  --min-pr-charge 2 \
+  --max-pr-charge 4 \
+  --met-excision \
+  --fixed-mod Carbamidomethyl,57.021464,C \
+  --var-mod Oxidation,15.994915,M \
+  --var-mods 1 \
+  --out-lib "/data/${HUMAN_ECOLI_LIB}" \
+  --threads "$THREADS"
+
+echo ""
+echo "======================================================"
+echo " Spectral library generation finished"
+echo "======================================================"
+echo ""
+echo "Generated files:"
+ls -lh "$OUT_DIR"
+echo ""
+echo "Use this library for pooled tear-fluid DIA files:"
+echo "  $HUMAN_LIB"
+echo ""
+echo "Use this library for dilution / E. coli spike-in files:"
+echo "  $HUMAN_ECOLI_LIB"
+echo ""
+EOF
+```
+
+Make the script executable:
+
+```bash
+chmod +x generate_diann_libraries.sh
+```
+
+Run the script:
+
+```bash
+./generate_diann_libraries.sh
+```
+
+Check the generated libraries:
+
+```bash
+ls -lh results/diann/libraries
+```
+
+Expected output:
+
+```text
+human_swissprot.predicted.speclib
+human_ecoli_swissprot.predicted.speclib
+```
