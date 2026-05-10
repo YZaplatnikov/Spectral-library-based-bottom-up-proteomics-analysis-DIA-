@@ -1,5 +1,9 @@
 ## Generate DIA-NN predicted spectral libraries from FASTA
 
+Go to the project root before running DIA-NN scripts:
+cd ~/projects/diann_tutorial
+pwd
+
 Before running DIA-NN on the raw files, we generate predicted spectral libraries from the FASTA databases.
 
 This tutorial creates two libraries:
