@@ -88,8 +88,13 @@ Expected output:
 ```text
 data_prot  fasta  results  tools
 ```
+## Important: always work from the project root
 
----
+All scripts in this tutorial assume that you run commands from the project root:
+
+```bash
+~/projects/diann_tutorial
+```
 
 # 1. Download the training dataset
 
