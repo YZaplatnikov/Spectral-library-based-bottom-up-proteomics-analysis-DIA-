@@ -1,5 +1,3 @@
-# Spectral-library-based-bottom-up-proteomics-analysis-DIA-
-this repository is for the short tutorial on spectral library-based bottom-up proteomics analysis with DIA-NN
 # Spectral-library-based bottom-up proteomics analysis with DIA-NN
 
 This repository contains a short tutorial for **spectral-library-based bottom-up proteomics analysis using DIA-NN**.
