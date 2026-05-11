@@ -479,3 +479,7 @@ For pooled human tear-fluid samples only, the human-only FASTA is also appropria
 ```text
 fasta/human_swissprot_reviewed.fasta
 ```
+DIA-NN supports only mzml files, but we have .raw ThermoScientific original files, so lets pull the MSConvert (PRoteowizard docker) and convert the files
+```text
+docker pull chambm/pwiz-skyline-i-agree-to-the-vendor-licenses
+```
