@@ -1,6 +1,6 @@
 cat > convert_raw_to_mzml.sh <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/sh
+set -eu
 
 echo "======================================================"
 echo " Convert Thermo RAW files to mzML using ProteoWizard"
@@ -21,7 +21,7 @@ echo "  $OUT_DIR"
 
 if [ ! -d "$RAW_DIR" ]; then
   echo "ERROR: RAW folder not found:"
-  echo "$RAW_DIR"
+  echo "  $RAW_DIR"
   exit 1
 fi
 
@@ -34,21 +34,21 @@ docker pull "$PWIZ_IMAGE"
 echo ""
 echo "Checking RAW files..."
 
-mapfile -t RAW_FILES < <(find "$RAW_DIR" -maxdepth 1 -type f -iname "*.raw" | sort)
+RAW_COUNT=$(find "$RAW_DIR" -maxdepth 1 -type f -iname "*.raw" | wc -l)
 
-if [ "${#RAW_FILES[@]}" -eq 0 ]; then
+if [ "$RAW_COUNT" -eq 0 ]; then
   echo "ERROR: No .raw files found in:"
-  echo "$RAW_DIR"
+  echo "  $RAW_DIR"
   exit 1
 fi
 
-echo "Found ${#RAW_FILES[@]} RAW files."
+echo "Found $RAW_COUNT RAW files."
 
 echo ""
 echo "Starting conversion..."
 echo ""
 
-for RAW_FILE in "${RAW_FILES[@]}"
+find "$RAW_DIR" -maxdepth 1 -type f -iname "*.raw" | sort | while read -r RAW_FILE
 do
   RAW_BASENAME=$(basename "$RAW_FILE")
   OUT_BASENAME="${RAW_BASENAME%.*}.mzML"
@@ -57,13 +57,14 @@ do
   echo "------------------------------------------------------"
   echo "Converting:"
   echo "  $RAW_BASENAME"
-  echo "to:"
+  echo "Output:"
   echo "  $OUT_BASENAME"
   echo "------------------------------------------------------"
 
   if [ -s "$OUT_FILE" ]; then
-    echo "Output already exists, skipping:"
+    echo "Already converted, skipping:"
     echo "  $OUT_FILE"
+    echo ""
     continue
   fi
 
@@ -94,3 +95,6 @@ echo ""
 echo "Number of mzML files:"
 find "$OUT_DIR" -maxdepth 1 -type f -name "*.mzML" | wc -l
 EOF
+
+chmod +x convert_raw_to_mzml.sh
+./convert_raw_to_mzml.sh
