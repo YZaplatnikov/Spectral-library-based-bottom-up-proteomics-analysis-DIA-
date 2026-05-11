@@ -1,52 +1,43 @@
-cat > convert_raw_to_mzml.sh <<'EOF'
-#!/bin/sh
-set -eu
+cd ~
 
-echo "======================================================"
-echo " Convert Thermo RAW files to mzML using ProteoWizard"
-echo "======================================================"
+rm -f convert_raw_to_mzml.sh
+
+cat > convert_raw_to_mzml.sh <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
 
 PWIZ_IMAGE="chambm/pwiz-skyline-i-agree-to-the-vendor-licenses"
 
 RAW_DIR="${RAW_DIR:-$HOME/data_prot/PXD062423}"
 OUT_DIR="${OUT_DIR:-$HOME/data_prot/PXD062423_mzML}"
 
-echo ""
 echo "Input RAW folder:"
-echo "  $RAW_DIR"
-
+echo "$RAW_DIR"
 echo ""
 echo "Output mzML folder:"
-echo "  $OUT_DIR"
+echo "$OUT_DIR"
+echo ""
 
 if [ ! -d "$RAW_DIR" ]; then
   echo "ERROR: RAW folder not found:"
-  echo "  $RAW_DIR"
+  echo "$RAW_DIR"
   exit 1
 fi
 
 mkdir -p "$OUT_DIR"
 
-echo ""
-echo "Pulling ProteoWizard Docker image..."
-docker pull "$PWIZ_IMAGE"
-
-echo ""
-echo "Checking RAW files..."
-
 RAW_COUNT=$(find "$RAW_DIR" -maxdepth 1 -type f -iname "*.raw" | wc -l)
 
 if [ "$RAW_COUNT" -eq 0 ]; then
-  echo "ERROR: No .raw files found in:"
-  echo "  $RAW_DIR"
+  echo "ERROR: No RAW files found in:"
+  echo "$RAW_DIR"
   exit 1
 fi
 
 echo "Found $RAW_COUNT RAW files."
+echo ""
 
-echo ""
-echo "Starting conversion..."
-echo ""
+docker pull "$PWIZ_IMAGE"
 
 find "$RAW_DIR" -maxdepth 1 -type f -iname "*.raw" | sort | while read -r RAW_FILE
 do
@@ -54,16 +45,13 @@ do
   OUT_BASENAME="${RAW_BASENAME%.*}.mzML"
   OUT_FILE="$OUT_DIR/$OUT_BASENAME"
 
-  echo "------------------------------------------------------"
-  echo "Converting:"
-  echo "  $RAW_BASENAME"
-  echo "Output:"
-  echo "  $OUT_BASENAME"
-  echo "------------------------------------------------------"
+  echo "======================================================"
+  echo "Converting: $RAW_BASENAME"
+  echo "Output:     $OUT_BASENAME"
+  echo "======================================================"
 
   if [ -s "$OUT_FILE" ]; then
-    echo "Already converted, skipping:"
-    echo "  $OUT_FILE"
+    echo "Already exists, skipping."
     echo ""
     continue
   fi
@@ -83,18 +71,17 @@ do
   echo ""
 done
 
-echo "======================================================"
-echo " Conversion finished"
-echo "======================================================"
-
+echo "Done."
 echo ""
-echo "Converted mzML files:"
-ls -lh "$OUT_DIR"/*.mzML
-
+echo "Converted files:"
+find "$OUT_DIR" -maxdepth 1 -type f -name "*.mzML" | sort
 echo ""
 echo "Number of mzML files:"
 find "$OUT_DIR" -maxdepth 1 -type f -name "*.mzML" | wc -l
 EOF
 
 chmod +x convert_raw_to_mzml.sh
+
+RAW_DIR="$HOME/data_prot/PXD062423" \
+OUT_DIR="$HOME/data_prot/PXD062423_mzML" \
 ./convert_raw_to_mzml.sh
