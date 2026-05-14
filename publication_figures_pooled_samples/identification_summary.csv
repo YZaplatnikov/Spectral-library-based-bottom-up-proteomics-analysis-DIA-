@@ -1,0 +1,5 @@
+method,level,n_replicates,unfiltered_total,unfiltered_avg_per_rep,filtered_total,filtered_avg_per_rep
+DIA,Protein,8,461,411.4,422,401.9
+DIA,Peptide,8,2118,1950.4,2013,1924.4
+DDA,Protein,8,323,257.9,264,244.2
+DDA,Peptide,8,1747,1217.5,1207,1101.9
