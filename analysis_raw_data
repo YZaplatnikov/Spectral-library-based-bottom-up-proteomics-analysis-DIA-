@@ -1,245 +1,49 @@
-cd ~
-
-cat > run_diann_mzml_only.sh <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "======================================================"
-echo " DIA-NN analysis using mzML files only"
-echo " Dataset: PXD062423"
-echo "======================================================"
+# =========================
+# EDIT THESE PATHS
+# =========================
+DIANN="/path/to/diann/diann.exe"
+RAW_DIR="/path/to/your/raw_files"
+OUT_DIR="/path/to/your/results"
+FASTA="/path/to/human_swissprot_reviewed.fasta"
 
-PROJECT_ROOT="$HOME"
-cd "$PROJECT_ROOT"
+mkdir -p "${OUT_DIR}"
 
-DIANN_IMAGE="diann:latest"
-THREADS="${THREADS:-8}"
+# =========================
+# 1. Generate predicted spectral library from FASTA
+# =========================
+"${DIANN}" \
+  --fasta "${FASTA}" \
+  --gen-spec-lib \
+  --out-lib "${OUT_DIR}/human_predicted_lib.tsv" \
+  --threads 8 \
+  --enzyme "Trypsin/P" \
+  --missed-cleavages 1 \
+  --met-excision \
+  --fixed-mod "Carbamidomethyl,C"
 
-MZML_DIR="data_prot/PXD062423_mzML"
-LIB_DIR="results/diann/libraries"
-FASTA_DIR="fasta"
-
-HUMAN_FASTA="${FASTA_DIR}/human_swissprot_reviewed.fasta"
-HUMAN_ECOLI_FASTA="${FASTA_DIR}/human_ecoli_swissprot_reviewed.fasta"
-
-OUT_DIR="results/diann/publication_style_mzML_ONLY"
-POOLED_OUT_DIR="${OUT_DIR}/pooled_tear_human"
-DILUTION_OUT_DIR="${OUT_DIR}/dilution_human_ecoli"
-
-mkdir -p "$POOLED_OUT_DIR" "$DILUTION_OUT_DIR"
-
-echo ""
-echo "Project root:"
-echo "$PROJECT_ROOT"
-
-echo ""
-echo "Checking mzML folder:"
-echo "$PROJECT_ROOT/$MZML_DIR"
-
-if [ ! -d "$MZML_DIR" ]; then
-  echo "ERROR: mzML folder not found:"
-  echo "$PROJECT_ROOT/$MZML_DIR"
-  exit 1
-fi
-
-echo ""
-echo "Available mzML files:"
-find "$MZML_DIR" -maxdepth 1 -type f -name "*.mzML" | sort
-
-MZML_COUNT=$(find "$MZML_DIR" -maxdepth 1 -type f -name "*.mzML" | wc -l)
-
-if [ "$MZML_COUNT" -eq 0 ]; then
-  echo "ERROR: No mzML files found in:"
-  echo "$PROJECT_ROOT/$MZML_DIR"
-  echo ""
-  echo "You must convert RAW files first."
-  exit 1
-fi
-
-echo ""
-echo "Found $MZML_COUNT mzML files."
-
-echo ""
-echo "Checking DIA-NN Docker image..."
-
-if ! docker image inspect "$DIANN_IMAGE" > /dev/null 2>&1; then
-  echo "ERROR: Docker image not found:"
-  echo "$DIANN_IMAGE"
-  exit 1
-fi
-
-echo "Docker image found: $DIANN_IMAGE"
-
-echo ""
-echo "Finding DIA-NN executable inside Docker image..."
-
-DIANN_BIN=$(docker run --rm --entrypoint /bin/sh "$DIANN_IMAGE" -c 'find / -type f -name "diann-linux" 2>/dev/null | head -n 1')
-
-if [ -z "$DIANN_BIN" ]; then
-  echo "ERROR: Could not find diann-linux inside Docker image."
-  exit 1
-fi
-
-echo "DIA-NN executable:"
-echo "$DIANN_BIN"
-
-echo ""
-echo "Finding spectral libraries..."
-
-HUMAN_LIB=$(find "$LIB_DIR" -maxdepth 1 -type f \( \
-  -name "human_swissprot.predicted.speclib" -o \
-  -name "human_swissprot.predicted.predicted.speclib" \
-\) | head -n 1)
-
-HUMAN_ECOLI_LIB=$(find "$LIB_DIR" -maxdepth 1 -type f \( \
-  -name "human_ecoli_swissprot.predicted.speclib" -o \
-  -name "human_ecoli_swissprot.predicted.predicted.speclib" \
-\) | head -n 1)
-
-if [ -z "$HUMAN_LIB" ]; then
-  echo "ERROR: human spectral library not found in $LIB_DIR"
-  ls -lh "$LIB_DIR" || true
-  exit 1
-fi
-
-if [ -z "$HUMAN_ECOLI_LIB" ]; then
-  echo "ERROR: human + E. coli spectral library not found in $LIB_DIR"
-  ls -lh "$LIB_DIR" || true
-  exit 1
-fi
-
-echo "Human library:"
-echo "$HUMAN_LIB"
-
-echo "Human + E. coli library:"
-echo "$HUMAN_ECOLI_LIB"
-
-echo ""
-echo "Checking FASTA files..."
-
-for FILE in "$HUMAN_FASTA" "$HUMAN_ECOLI_FASTA"
-do
-  if [ ! -f "$FILE" ]; then
-    echo "ERROR: FASTA file not found:"
-    echo "$PROJECT_ROOT/$FILE"
-    exit 1
-  fi
-done
-
-echo "FASTA files found."
-
-POOLED_FILES=(
-  "Pool_DIA_R1.mzML"
-  "Pool_DIA_R2.mzML"
-  "Pool_DIA_R3.mzML"
-  "Pool_DIA_R4.mzML"
-  "Pool_DIA_R5.mzML"
-  "Pool_DIA_R6.mzML"
-  "Pool_DIA_R7.mzML"
-  "Pool_DIA_R8.mzML"
-)
-
-DILUTION_FILES=(
-  "DIA_Base_1.mzML"
-  "DIA_Base_2.mzML"
-  "DIA_Base_3.mzML"
-  "DIA_2X_1.mzML"
-  "DIA_2X_2.mzML"
-  "DIA_2X_3.mzML"
-  "DIA_4X_1.mzML"
-  "DIA_4X_2.mzML"
-  "DIA_4X_3.mzML"
-  "DIA_8X_1.mzML"
-  "DIA_8X_2.mzML"
-  "DIA_8X_3.mzML"
-)
-
-echo ""
-echo "Checking required mzML files..."
-
-for FILE in "${POOLED_FILES[@]}" "${DILUTION_FILES[@]}"
-do
-  if [ ! -f "${MZML_DIR}/${FILE}" ]; then
-    echo "ERROR: mzML file not found:"
-    echo "$PROJECT_ROOT/${MZML_DIR}/${FILE}"
-    exit 1
-  fi
-done
-
-echo "All required mzML files found."
-
-COMMON_DIANN_ARGS=(
-  --threads "$THREADS"
-  --qvalue 0.01
-  --matrices
-  --pg-level 2
-  --reanalyse
-  --cut "K*,R*,!*P"
-  --missed-cleavages 1
-  --met-excision
-  --fixed-mod Carbamidomethyl,57.021464,C
-  --var-mod Oxidation,15.994915,M
-  --var-mods 1
-)
-
-echo ""
-echo "======================================================"
-echo " 1/2 Pooled tear-fluid DIA analysis"
-echo "======================================================"
-
-POOLED_DOCKER_FILES=()
-for FILE in "${POOLED_FILES[@]}"
-do
-  POOLED_DOCKER_FILES+=(--f "/data/${MZML_DIR}/${FILE}")
-done
-
-echo "Input files sent to DIA-NN:"
-printf '%s\n' "${POOLED_DOCKER_FILES[@]}"
-
-docker run --rm \
-  --entrypoint "$DIANN_BIN" \
-  -v "$PROJECT_ROOT:/data" \
-  "$DIANN_IMAGE" \
-  "${POOLED_DOCKER_FILES[@]}" \
-  --lib "/data/${HUMAN_LIB}" \
-  --fasta "/data/${HUMAN_FASTA}" \
-  --out "/data/${POOLED_OUT_DIR}/pooled_tear_human_report.tsv" \
-  "${COMMON_DIANN_ARGS[@]}" \
-  2>&1 | tee "${POOLED_OUT_DIR}/pooled_tear_human_console.log"
-
-echo ""
-echo "======================================================"
-echo " 2/2 Dilution / E. coli spike-in DIA analysis"
-echo "======================================================"
-
-DILUTION_DOCKER_FILES=()
-for FILE in "${DILUTION_FILES[@]}"
-do
-  DILUTION_DOCKER_FILES+=(--f "/data/${MZML_DIR}/${FILE}")
-done
-
-echo "Input files sent to DIA-NN:"
-printf '%s\n' "${DILUTION_DOCKER_FILES[@]}"
-
-docker run --rm \
-  --entrypoint "$DIANN_BIN" \
-  -v "$PROJECT_ROOT:/data" \
-  "$DIANN_IMAGE" \
-  "${DILUTION_DOCKER_FILES[@]}" \
-  --lib "/data/${HUMAN_ECOLI_LIB}" \
-  --fasta "/data/${HUMAN_ECOLI_FASTA}" \
-  --out "/data/${DILUTION_OUT_DIR}/dilution_human_ecoli_report.tsv" \
-  "${COMMON_DIANN_ARGS[@]}" \
-  2>&1 | tee "${DILUTION_OUT_DIR}/dilution_human_ecoli_console.log"
-
-echo ""
-echo "======================================================"
-echo " DIA-NN mzML-only analysis finished"
-echo "======================================================"
-
-find "$OUT_DIR" -maxdepth 3 -type f | sort
-EOF
-
-chmod +x run_diann_mzml_only.sh
-
-./run_diann_mzml_only.sh
+# =========================
+# 2. Analyse pooled DIA runs
+# =========================
+"${DIANN}" \
+  --f "${RAW_DIR}/Pool_DIA_R1.raw" \
+  --f "${RAW_DIR}/Pool_DIA_R2.raw" \
+  --f "${RAW_DIR}/Pool_DIA_R3.raw" \
+  --f "${RAW_DIR}/Pool_DIA_R4.raw" \
+  --f "${RAW_DIR}/Pool_DIA_R5.raw" \
+  --f "${RAW_DIR}/Pool_DIA_R6.raw" \
+  --f "${RAW_DIR}/Pool_DIA_R7.raw" \
+  --f "${RAW_DIR}/Pool_DIA_R8.raw" \
+  --lib "${OUT_DIR}/human_predicted_lib.tsv" \
+  --out "${OUT_DIR}/Pool_DIA_report.tsv" \
+  --qvalue 0.01 \
+  --matrix-qvalue 0.01 \
+  --threads 8 \
+  --matrices \
+  --mbr \
+  --no-shared-spectra \
+  --heuristic-protein-inference \
+  --quant-ums \
+  --protein-inference "gene"
